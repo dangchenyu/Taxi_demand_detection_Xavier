@@ -5,27 +5,18 @@ import math
 import numpy as np
 import tensorrt as trt
 from xavier_demo_det_utils import *
+from mot.detection import Centernet_tensorrt
+import argparse
 
-# ------------------- parameters -------------------
-# global parameters
-flag_time_static = True
-flag_show_result = True
-flag_cameral = False
-flag_video = False
 
 #
 ind_capture_device = 1
 size_cap = [1280, 720]  # width height
 # cap = cv2.VideoCapture(0)  #rec_20191119_165440.avi
-cap = cv2.VideoCapture('M19040313550500131.mp4')
+cap = cv2.VideoCapture('./test_video/M19040313550500131.mp4')
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, size_cap[0])
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, size_cap[1])
-time_program_total = 0
-time_total_detection = 0
-time_total_action = 0
-time_total_pose = 0
-ind_frame = 0
-start_ind_frame_want_to_test = 0
+
 
 # detection parameters
 # OUTPUT_NAME = ["conv_45", "conv_53", "conv_61", "conv_69"]
@@ -40,22 +31,39 @@ model_detection = detection_block(
     max_workspace_size=1,
     max_batch_size=1,
     num_class=1,
-    max_per_image=20,
-    vis_thresh=0.5)
+
+    )
+model_detection.set_max_per_image(max_per_image=20)
+
 process_caffemodel = process_caffemodel(model_detection)
 context_detection, h_input_detection, d_input_detection, h_output_detection, d_output_detection, stream_detection = process_caffemodel.get_outputs()
+model_detection.set_output(context_detection, h_input_detection, d_input_detection, h_output_detection, d_output_detection, stream_detection)
+parser = argparse.ArgumentParser()
+parser.add_argument('-dw', '--detector_model_path', required=True, help='root path of object detector models')
+parser.add_argument('-rw', '--recognizer_checkpoint', required=False,
+                    help='checkpoint file of TSN action recognizer')
+parser.add_argument('-i', '--video_path', default='', required=False,
+                    help='Path to the test video file or directory of test images. Leave it blank to use webcam.')
+parser.add_argument('-o', '--save_video', default='', required=False,
+                    help='Path to the output video file. Leave it blank to disable.')
+parser.add_argument('-s', '--save_result', default='', required=False,
+                    help='Path to the output track result file. Leave it blank to disable.')
+parser.add_argument('--num_segments', default=4, help='set segments num for action part')
+parser.add_argument('--vis_thres', default=0.3, help='threshold of detection')
+parser.add_argument('--max_per_image', default=20, help='max objects in per image')
+
+args = parser.parse_args()
+detector = Centernet_tensorrt(args)
+
 while True:
-    print(ind_frame)
-    ind_frame += 1
+
     ret, frame = cap.read()
     if not ret:
         break
     frame = frame[80:, :640]
     start_time = time.time()
-    model_detection.process_det_frame(frame=frame, pagelocked_buffer=h_input_detection)
-
-    model_detection.do_inference(context_detection, h_input_detection, d_input_detection, h_output_detection, d_output_detection,
-                 stream_detection)
-    output_box_detection = model_detection.posprocess_detection(h_output_detection, frame)
+    detections=detector(frame)
+    # model_detection.do_inference(frame)
+    # output_box_detection = model_detection.posprocess_detection(frame)
     end_time = time.time()
     print('total', end_time - start_time)

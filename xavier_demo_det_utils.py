@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import tensorrt as trt
 import pycuda.driver as cuda
+import pycuda.autoinit
 from numpy.lib.stride_tricks import as_strided
 
 # ------------------- static parameters -------------------
@@ -14,22 +15,22 @@ class process_caffemodel(object):
         self.model_info=model_info
     def _get_engine(self):
     # To apply for space
-        def GiB(self,val):
+        def _GiB(val):
             return val * 1 << 30
 
         # build engine based on caffe
-        def _build_engine_caffe(self):
+        def _build_engine_caffe(model_info):
             with trt.Builder(TRT_LOGGER) as builder, builder.create_network() as network, trt.CaffeParser() as parser:
-                builder.max_batch_size = self.model_info.max_batch_size
-                builder.max_workspace_size = self.GiB(self.model_info.max_workspace_size)
-                builder.fp16_mode = self.model_info.flag_fp16
+                builder.max_batch_size = model_info.max_batch_size
+                builder.max_workspace_size = _GiB(model_info.max_workspace_size)
+                builder.fp16_mode = model_info.flag_fp16
 
                 # Parse the model and build the engine.
-                model_tensors = parser.parse(deploy=self.model_info.deploy_file, model=self.model_info.model_file, network=network,
-                                             dtype=self.model_info.data_type)
-                for ind_out in range(len(self.model_info.output_name)):
-                    print(self.model_info.output_name[ind_out])
-                    network.mark_output(model_tensors.find(self.model_info.output_name[ind_out]))
+                model_tensors = parser.parse(deploy=model_info.deploy_file, model=model_info.model_file, network=network,
+                                             dtype=model_info.data_type)
+                for ind_out in range(len(model_info.output_name)):
+                    print(model_info.output_name[ind_out])
+                    network.mark_output(model_tensors.find(model_info.output_name[ind_out]))
                 print("Building TensorRT engine. This may take few minutes.")
                 return builder.build_cuda_engine(network)
 
@@ -37,10 +38,10 @@ class process_caffemodel(object):
             with open(self.model_info.engine_file, "rb") as f, trt.Runtime(TRT_LOGGER) as runtime:
                 print('-------------------load engine-------------------')
                 return runtime.deserialize_cuda_engine(f.read())
-        except:
+        except FileNotFoundError:
             # Fallback to building an engine if the engine cannot be loaded for any reason.
             engine = _build_engine_caffe(self.model_info)
-            with open(self.model_info.engine_file, "w+") as f:
+            with open(self.model_info.engine_file, "wb") as f:
                 f.write(engine.serialize())
                 print('-------------------save engine-------------------')
             return engine
@@ -52,7 +53,6 @@ class process_caffemodel(object):
         h_output = []
         d_output = []
         h_input = cuda.pagelocked_empty(trt.volume(engine.get_binding_shape(0)), dtype=trt.nptype(self.model_info.data_type))
-        # h_input = cuda.pagelocked_empty(trt.volume(engine.get_binding_shape(0)), dtype=trt.nptype(trt.float32))
         for ind_out in range(len(self.model_info.output_name)):
             h_output_temp = cuda.pagelocked_empty(trt.volume(engine.get_binding_shape(ind_out + 1)),
                                                   dtype=trt.nptype(self.model_info.data_type))
@@ -90,12 +90,21 @@ class detection_block(object):
         self.input_shape = input_shape
         self.confidence = -1.0
         self.num_class = num_class
-        self.max_per_image = max_per_image
-        self.vis_thresh = vis_thresh
         self.mean = [0.408, 0.447, 0.470]
         self.std = [0.289, 0.274, 0.278]
+    def set_max_per_image(self,max_per_image):
+        self.max_per_image=max_per_image
 
-    def process_det_frame(self, frame, pagelocked_buffer):
+    def set_output(self, context_detection, h_input_detection, d_input_detection, h_output_detection,
+                   d_out_put_detection, stream_detection):
+        self.context_detection = context_detection
+        self.h_input_detection = h_input_detection
+        self.d_input_detection = d_input_detection
+        self.h_output_detection = h_output_detection
+        self.d_output_detection = d_out_put_detection
+        self.stream_detection = stream_detection
+
+    def _process_det_frame(self, frame, pagelocked_buffer):
         frame_resize = cv2.resize(frame, (self.input_shape[2], self.input_shape[1]))
         mean = np.array(self.mean, dtype=np.float32).reshape(1, 1, 3)
         std = np.array(self.std, dtype=np.float32).reshape(1, 1, 3)
@@ -103,21 +112,24 @@ class detection_block(object):
         frame_nor = inp_image.transpose([2, 0, 1]).astype(trt.nptype(self.data_type)).ravel()
         np.copyto(pagelocked_buffer, frame_nor)
 
-    def do_inference(self,context, h_input, d_input, h_output, d_output, stream):
+    def do_inference(self, frame,):
+        # Process input frame for detector
+        self._process_det_frame(frame, pagelocked_buffer=self.h_input_detection)
         # Transfer input data to the GPU.
-        cuda.memcpy_htod_async(d_input, h_input, stream)
+        cuda.memcpy_htod_async(self.d_input_detection, self.h_input_detection, self.stream_detection)
         # Run inference.
-        bindings = [int(d_input)]
-        for ind_out in range(len(d_output)):
-            bindings.append(int(d_output[ind_out]))
-        context.execute_async(bindings=bindings, stream_handle=stream.handle)
+        bindings = [int(self.d_input_detection)]
+        for ind_out in range(len(self.d_output_detection)):
+            bindings.append(int(self.d_output_detection[ind_out]))
+        self.context_detection.execute_async(bindings=bindings, stream_handle=self.stream_detection.handle)
         # Transfer predictions back from the GPU.
 
-        for ind_out in range(len(d_output)):
-            cuda.memcpy_dtoh_async(h_output[ind_out], d_output[ind_out], stream)
+        for ind_out in range(len(self.d_output_detection)):
+            cuda.memcpy_dtoh_async(self.h_output_detection[ind_out], self.d_output_detection[ind_out], self.stream_detection)
         # Synchronize the stream
-        stream.synchronize()
-    def posprocess_detection(self, h_output, test_img):
+        self.stream_detection.synchronize()
+
+    def posprocess_detection(self, test_img):
         def sigmoid(x):
             return 1.0 / (1.0 + np.exp(-x))
 
@@ -126,14 +138,14 @@ class detection_block(object):
         self.meta = {'c': c, 's': s,
                      'out_height': self.heat_shape,
                      'out_width': self.heat_shape}
-        hm_person_sigmoid = sigmoid(h_output[0].reshape(1, 80, self.heat_shape, self.heat_shape)[0][0])
+        hm_person_sigmoid = sigmoid(self.h_output_detection[0].reshape(1, 80, self.heat_shape, self.heat_shape)[0][0])
         hm_person_sigmoid = hm_person_sigmoid.reshape(1,
                                                       self.num_class,
                                                       self.heat_shape,
                                                       self.heat_shape)
         # hm_person = np.concatenate([person_sigmoid,np.zeros((1,79,128,128))],axis=1)
-        wh = h_output[1].reshape(1, 2, self.heat_shape, self.heat_shape)
-        reg = h_output[2].reshape(1, 2, self.heat_shape, self.heat_shape)
+        wh = self.h_output_detection[1].reshape(1, 2, self.heat_shape, self.heat_shape)
+        reg = self.h_output_detection[2].reshape(1, 2, self.heat_shape, self.heat_shape)
 
         dets = self._ctdet_decode(hm_person_sigmoid, wh, reg=reg, K=self.max_per_image)
         dets = self._post_process(dets)
