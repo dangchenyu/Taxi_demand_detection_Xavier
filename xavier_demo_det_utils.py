@@ -36,7 +36,7 @@ class process_caffemodel(object):
 
         try:
             with open(self.model_info.engine_file, "rb") as f, trt.Runtime(TRT_LOGGER) as runtime:
-                print('-------------------load engine-------------------')
+                print('-------------------loading detector engine-------------------')
                 return runtime.deserialize_cuda_engine(f.read())
         except FileNotFoundError:
             # Fallback to building an engine if the engine cannot be loaded for any reason.

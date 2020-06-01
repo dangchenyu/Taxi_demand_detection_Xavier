@@ -1,4 +1,3 @@
-
 import torch.nn as nn
 import torch
 import math
@@ -26,7 +25,7 @@ def make_divisible(x, divisible_by=8):
 
 
 class InvertedResidual(nn.Module):
-    def __init__(self, inp, oup, stride, expand_ratio,segment_num):
+    def __init__(self, inp, oup, stride, expand_ratio):
         super(InvertedResidual, self).__init__()
         self.stride = stride
         assert stride in [1, 2]
@@ -66,7 +65,7 @@ class InvertedResidual(nn.Module):
             return self.conv(x)
 
 class InvertedResidualWithShift(nn.Module):
-    def __init__(self, inp, oup, stride, expand_ratio,segment_num,fold_div=8):
+    def __init__(self, inp, oup, stride, expand_ratio):
         super(InvertedResidualWithShift, self).__init__()
         self.stride = stride
         assert stride in [1, 2]
@@ -75,8 +74,6 @@ class InvertedResidualWithShift(nn.Module):
 
         hidden_dim = int(inp * expand_ratio)
         self.use_res_connect = self.stride == 1 and inp == oup
-        self.n_segment=segment_num
-        self.fold_div=fold_div
         assert self.use_res_connect
 
         self.conv = nn.Sequential(
@@ -93,28 +90,14 @@ class InvertedResidualWithShift(nn.Module):
             nn.BatchNorm2d(oup),
         )
 
-    def forward(self, x):
-        x_ori=x
-        nt, c, h, w = x.size()
-        n_batch = nt // self.n_segment
-
-        x = x.view(n_batch, self.n_segment, c, h, w)
-
-        fold = c //  self.fold_div
-
-        out = torch.zeros_like(x)
-        # out[:, :-1, :fold] = x[:, 1:, :fold]  # shift left
-        # out[:, 1:, fold: 2 * fold] = x[:, :-1, fold: 2 * fold]
-        out[:, 1:, fold:] = x[:, :-1, fold:]
-
-        # out[:, :, 2 * fold:] = x[:, :, 2 * fold:]  # not shift
-        out=out.view(nt, c, h, w)
-
-        return x_ori + self.conv(out)
+    def forward(self, x, shift_buffer):
+        c = x.size(1)
+        x1, x2 = x[:, : c // 8], x[:, c // 8:]
+        return x + self.conv(torch.cat((shift_buffer, x2), dim=1)), x1
 
 
 class MobileNetV2(nn.Module):
-    def __init__(self, n_class=2, input_size=224, width_mult=1.,segment_num=4):
+    def __init__(self, n_class=1000, input_size=224, width_mult=1.):
         super(MobileNetV2, self).__init__()
         input_channel = 32
         last_channel = 1280
@@ -125,13 +108,13 @@ class MobileNetV2(nn.Module):
             [6, 32, 3, 2],
             [6, 64, 4, 2],
             [6, 96, 3, 1],
-
+            # [6, 160, 3, 2],
+            # [6, 320, 1, 1],
         ]
 
         # building first layer
         assert input_size % 32 == 0
         # input_channel = make_divisible(input_channel * width_mult)  # first channel is always 32!
-        self.segment_num=segment_num
         self.last_channel = make_divisible(last_channel * width_mult) if width_mult > 1.0 else last_channel
         self.features = [conv_bn(3, input_channel, 2)]
         # building inverted residual blocks
@@ -142,11 +125,11 @@ class MobileNetV2(nn.Module):
             for i in range(n):
                 if i == 0:
                     block = InvertedResidualWithShift if global_idx in shift_block_idx else InvertedResidual
-                    self.features.append(block(input_channel, output_channel, s, expand_ratio=t,segment_num=self.segment_num))
+                    self.features.append(block(input_channel, output_channel, s, expand_ratio=t))
                     global_idx += 1
                 else:
                     block = InvertedResidualWithShift if global_idx in shift_block_idx else InvertedResidual
-                    self.features.append(block(input_channel, output_channel, 1, expand_ratio=t,segment_num=self.segment_num))
+                    self.features.append(block(input_channel, output_channel, 1, expand_ratio=t))
                     global_idx += 1
                 input_channel = output_channel
         # building last several layers
@@ -159,16 +142,19 @@ class MobileNetV2(nn.Module):
 
         self._initialize_weights()
 
-    def forward(self, x):
-        x=x.view((-1, 3) + x.size()[-2:])
+    def forward(self, x, *shift_buffer):
+        shift_buffer_idx = 0
+        out_buffer = []
         for f in self.features:
-            x = f(x)
+            if isinstance(f, InvertedResidualWithShift):
+                x, s = f(x, shift_buffer[shift_buffer_idx])
+                shift_buffer_idx += 1
+                out_buffer.append(s)
+            else:
+                x = f(x)
         x = x.mean(3).mean(2)
         x = self.classifier(x)
-        # x = x.view((1, self.segment_num) + x.size()[1:])
-        output = x.mean(dim=0, keepdim=True)
-
-        return output
+        return (x, *out_buffer)
 
     def _initialize_weights(self):
         for m in self.modules():

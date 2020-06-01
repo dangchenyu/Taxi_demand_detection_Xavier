@@ -1,5 +1,6 @@
-
 from mot.detection import Detection
+
+
 class Tracklet:
     min_time_lived = -1
 
@@ -28,6 +29,10 @@ class Tracklet:
         self.prediction = None
         # Whether the target was just detected or not.
         self.detected = True
+        # Action of this tracklet
+        self.action = []
+        # Past buffers for action recognition of this tracklet
+        self.past_buffers = []
 
     def predict(self):
         if self.prediction is not None:
