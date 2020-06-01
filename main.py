@@ -73,9 +73,9 @@ def track_and_recognize(tracker, recognizer, args):
     while True:
         start_time=time.time()
         ret, frame = capture.read()
-        # if count<900:
-        #     count+=1
-        #     continue
+        if count<900:
+            count+=1
+            continue
         if not ret:
             break
         frame = frame[80:, :640]
@@ -88,18 +88,18 @@ def track_and_recognize(tracker, recognizer, args):
             if tracklet.action[-1] == 0:
                 box = tracklet.last_detection.box
                 frame = cv2.putText(frame, 'walking', (int(box[0] + 4), int(box[1]) - 8),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), thickness=1)
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), thickness=1)
             elif tracklet.action[-1] == 1:
                 box = tracklet.last_detection.box
                 frame = cv2.putText(frame, 'standing', (int(box[0] + 4), int(box[1]) - 8),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), thickness=1)
-            end_time=time.time()
-            print(end_time-start_time)
-            cv2.imshow('Demo', frame)
-            # video_writer.write(frame)
-            key = cv2.waitKey(1)
-            if key == 27:
-                break
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), thickness=1)
+        end_time=time.time()
+        print(end_time-start_time,'total people',len(tracker.tracklets_active))
+        # cv2.imshow('Demo', frame)
+        # # video_writer.write(frame)
+        # key = cv2.waitKey(1)
+        # if key == 27:
+        #     break
 
     # video_writer.release()
 
@@ -118,12 +118,16 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--save_result', default='', required=False,
                         help='Path to the output track result file. Leave it blank to disable.')
     parser.add_argument('--num_segments', default=4, help='set segments num for action part')
-    parser.add_argument('--vis_thres', default=0.3, type=float,help='threshold of detection')
+    parser.add_argument('--vis_thres', default=0.5, type=float,help='threshold of detection')
     parser.add_argument('--max_per_image', default=20, help='max objects in per image')
+    parser.add_argument('--if_action_history', default=True, help='if combine past predictions in action recognition')
+    parser.add_argument('--max_hist_len', default=10, help='max history length of action prediction')
+    parser.add_argument('--predict_segments', default=4, help='smooth action segments')
+
 
     args = parser.parse_args()
-
+    recognizer = TSM(args)
     detector = Centernet_tensorrt(args)
     tracker = IoUTracker(detector, sigma_conf=0.3)
-    recognizer = TSM(args)
+
     track_and_recognize(tracker,recognizer, args)

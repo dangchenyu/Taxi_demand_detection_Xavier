@@ -30,7 +30,7 @@ class Tracklet:
         # Whether the target was just detected or not.
         self.detected = True
         # Action of this tracklet
-        self.action = []
+        self.action = [0]
         # Past buffers for action recognition of this tracklet
         self.past_buffers = []
 

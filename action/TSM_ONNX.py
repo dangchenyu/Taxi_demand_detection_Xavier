@@ -89,18 +89,20 @@ class TSM(object):
         return history[-1], history
     def __call__(self, objs):
         for obj in objs:
-            if obj.id not in self.active_ids.keys():
-                self.active_ids[obj.id]=self.buffer
-            img_tensor = self.frame_process(obj.feature_history[-1][1]['batch'])
-            input_var = torch.autograd.Variable(img_tensor.view(1, 3, img_tensor.size(1), img_tensor.size(2)))
-            img_nd = tvm.nd.array(input_var.detach().numpy(), ctx=self.ctx)
-            inputs: Tuple[tvm.nd.NDArray] = (img_nd,) + self.active_ids[obj.id]
-            outputs = self.executor(inputs)
-            feat, self.active_ids[obj.id] = outputs[0], outputs[1:]
-            idx_ = np.argmax(feat.asnumpy(), axis=1)[0]
-            if self.HISTORY_LOGIT:
-                obj.past_buffers.append(feat.asnumpy())
-                obj.past_buffers =  obj.past_buffers[-(self.max_hist_len-self.predict_segments):]
-                avg_logit = sum( obj.past_buffers)
-                idx_ = np.argmax(avg_logit, axis=1)[0]
-            idx, obj.action = self.process_output(idx_, obj.action)
+            if len(obj.feature_history)>2:
+                if obj.id not in self.active_ids.keys():
+                    self.active_ids[obj.id]=self.buffer
+                img_tensor = self.frame_process(obj.feature_history[-1][1]['patch'])
+                input_var = torch.autograd.Variable(img_tensor.view(1, 3, img_tensor.size(1), img_tensor.size(2)))
+                img_nd = tvm.nd.array(input_var.detach().numpy(), ctx=self.ctx)
+                inputs: Tuple[tvm.nd.NDArray] = (img_nd,) + self.active_ids[obj.id]
+                outputs = self.executor(inputs)
+                feat, self.active_ids[obj.id] = outputs[0], outputs[1:]
+                idx_ = np.argmax(feat.asnumpy(), axis=1)[0]
+                if self.HISTORY_LOGIT:
+                    obj.past_buffers.append(feat.asnumpy())
+                    obj.past_buffers =  obj.past_buffers[-(self.max_hist_len-self.predict_segments):]
+                    avg_logit = sum( obj.past_buffers)
+                    idx_ = np.argmax(avg_logit, axis=1)[0]
+                obj.action.append(idx_)
+                # idx, obj.action = self.process_output(idx_, obj.action)
