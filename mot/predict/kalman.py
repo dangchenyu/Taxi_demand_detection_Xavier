@@ -6,7 +6,7 @@ import scipy
 import numpy as np
 from typing import List
 
-import mot.utils.box
+import utils.box
 from mot.tracklet import Tracklet
 from mot.prediction import Prediction
 from .predict import Predictor, PREDICTOR_REGISTRY
@@ -214,7 +214,7 @@ class KalmanPredictor(Predictor):
     def convert(self, box: np.ndarray, in_type: str, out_type: str) -> np.ndarray:
         assert in_type in ['xyxy', 'xywh', 'xyah'] and out_type in ['xyxy', 'xywh',
                                                                     'xyah'], "Unknown box representation"
-        return getattr(mot.utils.box, in_type + '2' + out_type)(box)
+        return getattr(utils.box, in_type + '2' + out_type)(box)
 
     def initiate(self, tracklets: List[Tracklet]) -> None:
         for tracklet in tracklets:

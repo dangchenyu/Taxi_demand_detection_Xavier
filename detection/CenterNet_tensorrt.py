@@ -2,7 +2,7 @@ from .detect import Detector, Detection
 import numpy as np
 import os
 import tensorrt as trt
-from xavier_demo_det_utils import *
+from .detection_utils import *
 
 
 class Centernet_tensorrt(Detector):
@@ -29,5 +29,10 @@ class Centernet_tensorrt(Detector):
         self.model_detection.do_inference(img)
         detections =  self.model_detection.posprocess_detection(img)
         result = detections[1][np.where(detections[1][:,4] > self.conf_thres)]
+        result = result[np.where((result[:,2]- result[:,0])< (result[:,3]- result[:,1]))]#reduce FP h>w
+        result = result[np.where((result[:,3]- result[:,1])>50)] #reduce FP h>50
+        result = result[np.where(300>(result[:,3]- result[:,1]))] #reduce FP h<320
+
+
         return [Detection(line[:4], line[4]) for line in result]
 

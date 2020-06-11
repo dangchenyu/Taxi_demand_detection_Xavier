@@ -1,4 +1,4 @@
-from mot.detection import Detection
+from detection import Detection
 
 
 class Tracklet:
@@ -30,7 +30,7 @@ class Tracklet:
         # Whether the target was just detected or not.
         self.detected = True
         # Action of this tracklet
-        self.action = [0]
+        self.action = []
         # Past buffers for action recognition of this tracklet
         self.past_buffers = []
 

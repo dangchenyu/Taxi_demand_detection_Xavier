@@ -98,11 +98,16 @@ class TSM(object):
                 inputs: Tuple[tvm.nd.NDArray] = (img_nd,) + self.active_ids[obj.id]
                 outputs = self.executor(inputs)
                 feat, self.active_ids[obj.id] = outputs[0], outputs[1:]
-                idx_ = np.argmax(feat.asnumpy(), axis=1)[0]
                 if self.HISTORY_LOGIT:
                     obj.past_buffers.append(feat.asnumpy())
-                    obj.past_buffers =  obj.past_buffers[-(self.max_hist_len-self.predict_segments):]
-                    avg_logit = sum( obj.past_buffers)
-                    idx_ = np.argmax(avg_logit, axis=1)[0]
+                    if len(obj.past_buffers)>=self.predict_segments:
+                        obj.past_buffers =  obj.past_buffers[-(self.max_hist_len-self.predict_segments):]
+                        avg_logit = sum( obj.past_buffers)
+
+                        idx_ = np.argmax(avg_logit, axis=1)[0]
+                    else:
+                        idx_=None
+                else:
+                    idx_ = np.argmax(feat.asnumpy(), axis=1)[0]
                 obj.action.append(idx_)
                 # idx, obj.action = self.process_output(idx_, obj.action)

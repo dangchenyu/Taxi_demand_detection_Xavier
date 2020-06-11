@@ -91,15 +91,7 @@ def draw_targets(image, tracklets, confirmed_only=True, detected_only=True, draw
     return image
 
 
-def draw_frame_num(image, frame_num):
-    """
-    Draw the frame number at the top-left corner of the frame.
-    :param image: A 3D numpy array with shape (h, w, 3). The video frame.
-    :param frame_num: Frame number.
-    :return: A 3D numpy array with shape (h, w, 3). The video frame with its frame number drawn.
-    """
-    cv2.putText(image, '{}'.format(frame_num), (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), thickness=2)
-    return image
+
 
 
 def draw_target_box(image, box, id, draw_center=False):
@@ -112,14 +104,14 @@ def draw_target_box(image, box, id, draw_center=False):
     :return: A 3D numpy array with shape (h, w, 3). The video frame with a new target box drawn.
     """
     image = cv2.rectangle(image, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])),
-                          _colors[int(id) % _colors.__len__()], thickness=3)
+                          _colors[int(id) % _colors.__len__()], thickness=2)
     id_string = '{:d}'.format(int(id))
-    id_size, baseline = cv2.getTextSize(id_string, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+    id_size, baseline = cv2.getTextSize(id_string, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
     image = cv2.rectangle(image, (int(box[0]), int(box[1])),
-                          (int(box[0] + id_size[0] + 4), int(box[1] + id_size[1]) + 10),
+                          (int(box[0] + id_size[0]+2 ), int(box[1] + id_size[1])+2 ),
                           _colors[int(id) % _colors.__len__()], thickness=-1)
-    image = cv2.putText(image, id_string, (int(box[0] + 2), int(box[1]) + id_size[1] + 4),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), thickness=2)
+    image = cv2.putText(image, id_string, (int(box[0] + 2), int(box[1]) + id_size[1] ),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), thickness=2)
     if draw_center:
         image = cv2.circle(image, (int((box[0] + box[2]) / 2), int((box[1] + box[3]) / 2)), radius=10,
                            color=(0, 0, 255), thickness=-1)
@@ -167,5 +159,4 @@ def visualize_snapshot(frame, tracker, confirmed_only=True, detected_only=True, 
     image = draw_targets(frame, tracker.tracklets_active,
                          confirmed_only=confirmed_only, detected_only=detected_only, draw_centers=draw_centers,
                          draw_predictions=draw_predictions, draw_skeletons=draw_skeletons)
-    image = draw_frame_num(image, tracker.frame_num)
     return image

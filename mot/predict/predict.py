@@ -1,7 +1,6 @@
-import numpy as np
 from typing import List
 from abc import ABCMeta, abstractmethod
-from mot.utils import Registry
+from utils import Registry
 from mot.tracklet import Tracklet
 from mot.prediction import Prediction
 

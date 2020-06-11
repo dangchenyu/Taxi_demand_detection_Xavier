@@ -6,7 +6,6 @@
 from __future__ import division
 import numpy as np
 import cv2
-import mot.utils.box
 from typing import List
 
 from mot.tracklet import Tracklet

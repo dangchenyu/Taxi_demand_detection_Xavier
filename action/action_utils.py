@@ -12,7 +12,7 @@ import torch.onnx
 from PIL import Image, ImageOps
 import onnx
 import tvm.contrib.graph_runtime as graph_runtime
-from action.MobileNet_TSM import MobileNetV2
+from MobileNet_TSM import MobileNetV2
 
 SOFTMAX_THRES = 0
 HISTORY_LOGIT = True
@@ -272,7 +272,7 @@ def process_output(idx_, history):
     history.append(idx_)
     history = history[-max_hist_len:]
 
-    return history[-1], history
+    return history[-1]
 
 
 WINDOW_NAME = 'Video Gesture Recognition'
